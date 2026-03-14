@@ -2,3 +2,7 @@ node_modules
 dist
 .vite
 .env
+backend/.env
+backend/db.sqlite3
+**/__pycache__/
+**/*.pyc
