@@ -4,7 +4,10 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from django.utils import timezone
+from django.conf import settings
+from django.core.mail import send_mail
 from datetime import timedelta
+from threading import Thread
 
 from .serializers import (
     RegisterSerializer, LoginSerializer, UserSerializer,
@@ -13,6 +16,22 @@ from .serializers import (
 from .models import OTP
 
 User = get_user_model()
+
+
+def _send_otp_email_async(subject, message, from_email, recipient_list, fallback_email, fallback_code):
+    def _send():
+        try:
+            send_mail(
+                subject,
+                message,
+                from_email,
+                recipient_list,
+                fail_silently=False,
+            )
+        except Exception:
+            print(f"\n{'='*40}\n  OTP for {fallback_email}: {fallback_code}\n{'='*40}\n")
+
+    Thread(target=_send, daemon=True).start()
 
 
 class RegisterView(generics.CreateAPIView):
@@ -71,7 +90,7 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 
 
 class RequestOTPView(APIView):
-    """Request a password-reset OTP sent via console (dev) or email (prod)."""
+    """Request a password-reset OTP sent via configured email backend."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -85,8 +104,24 @@ class RequestOTPView(APIView):
 
         code = OTP.generate_code()
         OTP.objects.create(user=user, code=code)
-        # In production, send this via email/SMS. For dev, print to console.
-        print(f"\n{'='*40}\n  OTP for {email}: {code}\n{'='*40}\n")
+
+        subject = 'Core Inventory Password Reset OTP'
+        message = (
+            f"Hello {user.first_name or user.username},\n\n"
+            f"Your OTP for password reset is: {code}\n"
+            "This OTP is valid for 10 minutes.\n\n"
+            "If you did not request this, please ignore this email."
+        )
+
+        from_email = settings.DEFAULT_FROM_EMAIL
+        recipient_list = [email]
+
+        # If SMTP credentials are missing, keep dev behavior by logging OTP.
+        if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD:
+            print(f"\n{'='*40}\n  OTP for {email}: {code}\n{'='*40}\n")
+            return Response({'message': 'If the email exists, an OTP has been sent.'})
+
+        _send_otp_email_async(subject, message, from_email, recipient_list, email, code)
         return Response({'message': 'If the email exists, an OTP has been sent.'})
 
 

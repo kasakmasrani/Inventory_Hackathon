@@ -13,6 +13,7 @@ import TransfersPage from './pages/TransfersPage';
 import AdjustmentsPage from './pages/AdjustmentsPage';
 import LedgerPage from './pages/LedgerPage';
 import ProfilePage from './pages/ProfilePage';
+import SettingsPage from './pages/SettingsPage';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -52,6 +53,7 @@ function App() {
             <Route path="/transfers" element={<TransfersPage />} />
             <Route path="/adjustments" element={<AdjustmentsPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
 

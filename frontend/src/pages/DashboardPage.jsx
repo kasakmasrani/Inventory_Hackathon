@@ -1,9 +1,27 @@
 import { useEffect, useState } from 'react';
-import { dashboardAPI, operationsAPI } from '../services/api';
+import { dashboardAPI, operationsAPI, productsAPI, warehousesAPI } from '../services/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import { HiOutlineCube, HiOutlineExclamation, HiOutlineClipboardList, HiOutlineTruck, HiOutlineSwitchHorizontal, HiOutlineBell } from 'react-icons/hi';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+function formatCategoryData(raw = []) {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  const cleaned = raw
+    .map((item) => ({
+      name: item.name || 'Uncategorized',
+      value: Number(item.value) || 0,
+    }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (cleaned.length <= 8) return cleaned;
+
+  const top = cleaned.slice(0, 7);
+  const othersTotal = cleaned.slice(7).reduce((sum, item) => sum + item.value, 0);
+  return [...top, { name: 'Others', value: othersTotal }];
+}
 
 function StatsCard({ title, value, icon: Icon, color, subtitle }) {
   return (
@@ -24,13 +42,56 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({});
   const [charts, setCharts] = useState({});
   const [alerts, setAlerts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [docType, setDocType] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [warehouseFilter, setWarehouseFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const categoryChartData = formatCategoryData(charts.category_distribution || []);
+
+  const filterParams = {};
+  if (docType) filterParams.doc_type = docType;
+  if (statusFilter) filterParams.status = statusFilter;
+  if (warehouseFilter) filterParams.warehouse = warehouseFilter;
+  if (locationFilter) filterParams.location = locationFilter;
+  if (categoryFilter) filterParams.category = categoryFilter;
+
   useEffect(() => {
+    productsAPI.categories()
+      .then((res) => setCategories(res.data.results || res.data || []))
+      .catch(() => {});
+    warehousesAPI.list()
+      .then((res) => setWarehouses(res.data.results || res.data || []))
+      .catch(() => {});
+    warehousesAPI.locations({})
+      .then((res) => setLocations(res.data.results || res.data || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (locationFilter) {
+      const locationExists = locations.some((loc) => String(loc.id) === String(locationFilter));
+      if (!locationExists) {
+        setLocationFilter('');
+      }
+    }
+  }, [warehouseFilter, locations]);
+
+  const filteredLocations = warehouseFilter
+    ? locations.filter((loc) => String(loc.warehouse) === String(warehouseFilter))
+    : locations;
+
+  useEffect(() => {
+    setLoading(true);
     Promise.all([
-      dashboardAPI.stats(),
-      dashboardAPI.charts(),
-      operationsAPI.alerts({ resolved: 'false' }),
+      dashboardAPI.stats(filterParams),
+      dashboardAPI.charts(filterParams),
+      operationsAPI.alerts({ resolved: 'false', ...filterParams }),
     ])
       .then(([s, c, a]) => {
         setStats(s.data);
@@ -39,7 +100,7 @@ export default function DashboardPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [docType, statusFilter, warehouseFilter, locationFilter, categoryFilter]);
 
   if (loading) {
     return (
@@ -51,6 +112,52 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Dynamic Filters */}
+      <div className="bg-surface/80 backdrop-blur border border-primary-800/20 rounded-2xl p-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+          <select value={docType} onChange={(e) => setDocType(e.target.value)} className="px-4 py-2.5 bg-surface-light border border-primary-800/30 rounded-xl text-gray-200 text-sm focus:outline-none focus:border-primary-500">
+            <option value="">All Documents</option>
+            <option value="receipts">Receipts</option>
+            <option value="delivery">Delivery</option>
+            <option value="internal">Internal Transfers</option>
+            <option value="adjustments">Adjustments</option>
+          </select>
+
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2.5 bg-surface-light border border-primary-800/30 rounded-xl text-gray-200 text-sm focus:outline-none focus:border-primary-500">
+            <option value="">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="waiting">Waiting</option>
+            <option value="ready">Ready</option>
+            <option value="picking">Picking</option>
+            <option value="packing">Packing</option>
+            <option value="in_transit">In Transit</option>
+            <option value="done">Done</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+
+          <select value={warehouseFilter} onChange={(e) => { setWarehouseFilter(e.target.value); setLocationFilter(''); }} className="px-4 py-2.5 bg-surface-light border border-primary-800/30 rounded-xl text-gray-200 text-sm focus:outline-none focus:border-primary-500">
+            <option value="">All Warehouses</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+
+          <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="px-4 py-2.5 bg-surface-light border border-primary-800/30 rounded-xl text-gray-200 text-sm focus:outline-none focus:border-primary-500">
+            <option value="">All Locations</option>
+            {filteredLocations.map((l) => (
+              <option key={l.id} value={l.id}>{l.warehouse_name} → {l.name}</option>
+            ))}
+          </select>
+
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-4 py-2.5 bg-surface-light border border-primary-800/30 rounded-xl text-gray-200 text-sm focus:outline-none focus:border-primary-500">
+            <option value="">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatsCard title="Total Products" value={stats.total_products || 0} icon={HiOutlineCube} color="bg-gradient-to-br from-primary-600 to-primary-500" />
@@ -86,15 +193,40 @@ export default function DashboardPage() {
         {/* Category Distribution */}
         <div className="bg-surface/80 backdrop-blur border border-primary-800/20 rounded-2xl p-6">
           <h3 className="text-lg font-semibold text-gray-100 mb-4">Stock by Category</h3>
-          {charts.category_distribution?.length > 0 ? (
+          {categoryChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={charts.category_distribution} cx="50%" cy="50%" outerRadius={100} dataKey="value" nameKey="name" label={({ name, value }) => `${name}: ${value}`}>
-                  {charts.category_distribution.map((_, i) => (
+                <Pie
+                  data={categoryChartData}
+                  cx="35%"
+                  cy="50%"
+                  innerRadius={56}
+                  outerRadius={92}
+                  dataKey="value"
+                  nameKey="name"
+                  label={false}
+                  labelLine={false}
+                >
+                  {categoryChartData.map((_, i) => (
                     <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: '#1a1640', border: '1px solid #4338ca', borderRadius: '12px' }} />
+                <Legend
+                  layout="vertical"
+                  verticalAlign="middle"
+                  align="right"
+                  wrapperStyle={{
+                    right: 0,
+                    fontSize: '12px',
+                    lineHeight: '20px',
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                  }}
+                />
+                <Tooltip
+                  formatter={(value, name) => [value, name]}
+                  contentStyle={{ background: '#1a1640', border: '1px solid #4338ca', borderRadius: '12px' }}
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : (

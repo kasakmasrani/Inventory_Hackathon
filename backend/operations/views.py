@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
 
 from warehouses.models import StockByLocation
 from .models import (
@@ -45,6 +46,12 @@ def _create_ledger_entry(product, op_type, qty_change, location, reference, user
     )
 
 
+def _csv_values(raw):
+    if not raw:
+        return []
+    return [v.strip() for v in raw.split(',') if v.strip()]
+
+
 class ReceiptViewSet(viewsets.ModelViewSet):
     queryset = Receipt.objects.prefetch_related('items__product').select_related('location', 'created_by')
     permission_classes = [permissions.IsAuthenticated]
@@ -56,10 +63,26 @@ class ReceiptViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        s = self.request.query_params.get('status')
-        if s:
-            qs = qs.filter(status=s)
-        return qs
+        statuses = _csv_values(self.request.query_params.get('status'))
+        warehouse = self.request.query_params.get('warehouse')
+        location = self.request.query_params.get('location')
+        category = self.request.query_params.get('category')
+        product = self.request.query_params.get('product')
+        search = self.request.query_params.get('search')
+
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        if warehouse:
+            qs = qs.filter(location__warehouse_id=warehouse)
+        if location:
+            qs = qs.filter(location_id=location)
+        if category:
+            qs = qs.filter(items__product__category_id=category)
+        if product:
+            qs = qs.filter(items__product_id=product)
+        if search:
+            qs = qs.filter(Q(reference__icontains=search) | Q(supplier__icontains=search))
+        return qs.distinct()
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -103,10 +126,26 @@ class DeliveryOrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        s = self.request.query_params.get('status')
-        if s:
-            qs = qs.filter(status=s)
-        return qs
+        statuses = _csv_values(self.request.query_params.get('status'))
+        warehouse = self.request.query_params.get('warehouse')
+        location = self.request.query_params.get('location')
+        category = self.request.query_params.get('category')
+        product = self.request.query_params.get('product')
+        search = self.request.query_params.get('search')
+
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        if warehouse:
+            qs = qs.filter(location__warehouse_id=warehouse)
+        if location:
+            qs = qs.filter(location_id=location)
+        if category:
+            qs = qs.filter(items__product__category_id=category)
+        if product:
+            qs = qs.filter(items__product_id=product)
+        if search:
+            qs = qs.filter(Q(reference__icontains=search) | Q(customer__icontains=search))
+        return qs.distinct()
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
@@ -174,9 +213,34 @@ class TransferViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        s = self.request.query_params.get('status')
-        if s:
-            qs = qs.filter(status=s)
+        statuses = _csv_values(self.request.query_params.get('status'))
+        warehouse = self.request.query_params.get('warehouse')
+        from_warehouse = self.request.query_params.get('from_warehouse')
+        to_warehouse = self.request.query_params.get('to_warehouse')
+        from_location = self.request.query_params.get('from_location')
+        to_location = self.request.query_params.get('to_location')
+        category = self.request.query_params.get('category')
+        product = self.request.query_params.get('product')
+        search = self.request.query_params.get('search')
+
+        if statuses:
+            qs = qs.filter(status__in=statuses)
+        if warehouse:
+            qs = qs.filter(Q(from_location__warehouse_id=warehouse) | Q(to_location__warehouse_id=warehouse))
+        if from_warehouse:
+            qs = qs.filter(from_location__warehouse_id=from_warehouse)
+        if to_warehouse:
+            qs = qs.filter(to_location__warehouse_id=to_warehouse)
+        if from_location:
+            qs = qs.filter(from_location_id=from_location)
+        if to_location:
+            qs = qs.filter(to_location_id=to_location)
+        if category:
+            qs = qs.filter(product__category_id=category)
+        if product:
+            qs = qs.filter(product_id=product)
+        if search:
+            qs = qs.filter(reference__icontains=search)
         return qs
 
     def perform_create(self, serializer):
@@ -254,6 +318,29 @@ class AdjustmentViewSet(viewsets.ModelViewSet):
             )
             _check_and_create_alerts(product, location)
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        warehouse = self.request.query_params.get('warehouse')
+        location = self.request.query_params.get('location')
+        category = self.request.query_params.get('category')
+        product = self.request.query_params.get('product')
+        reason = self.request.query_params.get('reason')
+        search = self.request.query_params.get('search')
+
+        if warehouse:
+            qs = qs.filter(location__warehouse_id=warehouse)
+        if location:
+            qs = qs.filter(location_id=location)
+        if category:
+            qs = qs.filter(product__category_id=category)
+        if product:
+            qs = qs.filter(product_id=product)
+        if reason:
+            qs = qs.filter(reason=reason)
+        if search:
+            qs = qs.filter(reference__icontains=search)
+        return qs
+
 
 class StockLedgerViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = StockLedger.objects.select_related('product', 'location', 'created_by')
@@ -268,12 +355,18 @@ class StockLedgerViewSet(viewsets.ReadOnlyModelViewSet):
         op = self.request.query_params.get('operation_type')
         product = self.request.query_params.get('product')
         warehouse = self.request.query_params.get('warehouse')
+        location = self.request.query_params.get('location')
+        category = self.request.query_params.get('category')
         if op:
-            qs = qs.filter(operation_type=op)
+            qs = qs.filter(operation_type__in=_csv_values(op))
         if product:
             qs = qs.filter(product_id=product)
         if warehouse:
             qs = qs.filter(location__warehouse_id=warehouse)
+        if location:
+            qs = qs.filter(location_id=location)
+        if category:
+            qs = qs.filter(product__category_id=category)
         return qs
 
 
@@ -285,8 +378,20 @@ class StockAlertViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         resolved = self.request.query_params.get('resolved')
+        warehouse = self.request.query_params.get('warehouse')
+        location = self.request.query_params.get('location')
+        category = self.request.query_params.get('category')
+        product = self.request.query_params.get('product')
         if resolved is not None:
             qs = qs.filter(is_resolved=resolved.lower() == 'true')
+        if warehouse:
+            qs = qs.filter(location__warehouse_id=warehouse)
+        if location:
+            qs = qs.filter(location_id=location)
+        if category:
+            qs = qs.filter(product__category_id=category)
+        if product:
+            qs = qs.filter(product_id=product)
         return qs
 
     @action(detail=True, methods=['post'])

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   HiOutlineHome, HiOutlineCube, HiOutlineOfficeBuilding,
   HiOutlineClipboardList, HiOutlineTruck, HiOutlineSwitchHorizontal,
-  HiOutlineAdjustments, HiOutlineUser, HiOutlineLogout, HiOutlineDocumentReport
+  HiOutlineAdjustments, HiOutlineUser, HiOutlineLogout, HiOutlineDocumentReport, HiOutlineCog
 } from 'react-icons/hi';
 
 const links = [
@@ -15,6 +15,7 @@ const links = [
   { to: '/transfers', label: 'Transfers', icon: HiOutlineSwitchHorizontal },
   { to: '/adjustments', label: 'Adjustments', icon: HiOutlineAdjustments },
   { to: '/ledger', label: 'Stock Ledger', icon: HiOutlineDocumentReport },
+  { to: '/settings', label: 'Settings', icon: HiOutlineCog },
   { to: '/profile', label: 'Profile', icon: HiOutlineUser },
 ];
 

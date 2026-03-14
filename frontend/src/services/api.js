@@ -110,8 +110,8 @@ export const operationsAPI = {
 
 // Dashboard
 export const dashboardAPI = {
-  stats: () => api.get('/dashboard/stats/'),
-  charts: () => api.get('/dashboard/charts/'),
+  stats: (params) => api.get('/dashboard/stats/', { params }),
+  charts: (params) => api.get('/dashboard/charts/', { params }),
 };
 
 export default api;
